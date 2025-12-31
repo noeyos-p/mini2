@@ -1,0 +1,4 @@
+/frontend/node_modules
+.vscode/*
+!.vscode/extensions.json
+node_modules

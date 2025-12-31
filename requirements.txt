@@ -1,0 +1,28 @@
+# Vision Assistant Backend Dependencies
+# CUDA 버전에 맞는 PyTorch 먼저 설치!
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# Core
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+pydantic==2.9.2
+
+# ML/DL
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.45.0
+accelerate>=0.33.0
+
+# Qwen2-VL 전용
+qwen-vl-utils>=0.0.2
+
+# 번역 모델 (M2M100)
+sentencepiece>=0.1.99
+sacremoses>=0.0.53
+
+# Image processing
+Pillow>=10.0.0
+
+# Utils
+python-dotenv>=1.0.0
