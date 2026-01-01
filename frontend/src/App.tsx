@@ -51,7 +51,7 @@ function App() {
   const [cameraActive, setCameraActive] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [isListening, setIsListening] = useState(false);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,18 +69,18 @@ function App() {
   // TTS 음성 출력
   const speak = useCallback((text: string) => {
     if (!ttsEnabled || !('speechSynthesis' in window)) return;
-    
+
     window.speechSynthesis.cancel();
-    
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ko-KR';
     utterance.rate = 0.9;
     utterance.pitch = 1;
-    
+
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
-    
+
     window.speechSynthesis.speak(utterance);
   }, [ttsEnabled]);
 
@@ -93,31 +93,31 @@ function App() {
   // STT 초기화
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
+
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.lang = 'ko-KR';
       recognition.continuous = false;
       recognition.interimResults = true;
-      
+
       recognition.onstart = () => {
         setIsListening(true);
       };
-      
+
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = Array.from(event.results)
           .map(result => result[0].transcript)
           .join('');
-        
+
         setQuestion(transcript);
-        
+
         // 최종 결과면 자동 전송 (선택적)
         if (event.results[event.results.length - 1].isFinal) {
           // 자동 전송 원하면 아래 주석 해제
           // setTimeout(() => handleSubmit(), 500);
         }
       };
-      
+
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('STT Error:', event.error);
         setIsListening(false);
@@ -126,14 +126,14 @@ function App() {
           speak('마이크 권한이 필요합니다.');
         }
       };
-      
+
       recognition.onend = () => {
         setIsListening(false);
       };
-      
+
       recognitionRef.current = recognition;
     }
-    
+
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.abort();
@@ -148,7 +148,7 @@ function App() {
       speak('음성 인식을 지원하지 않는 브라우저입니다.');
       return;
     }
-    
+
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
@@ -177,19 +177,25 @@ function App() {
         video: { facingMode: 'environment' },
         audio: false,
       });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setCameraActive(true);
-        speak('카메라가 활성화되었습니다. 촬영 버튼을 눌러 사진을 찍으세요.');
-      }
+
+      streamRef.current = stream;
+      setCameraActive(true);  // 먼저 true로!
+
     } catch (err) {
       console.error('Camera error:', err);
-      setError('카메라를 사용할 수 없습니다. 카메라 권한을 확인해주세요.');
+      setError('카메라를 사용할 수 없습니다.');
       speak('카메라를 사용할 수 없습니다.');
     }
   }, [speak]);
+
+  // 카메라 활성화되면 stream 연결
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(console.error);
+      speak('카메라가 활성화되었습니다.');
+    }
+  }, [cameraActive, speak]);
 
   // 카메라 중지
   const stopCamera = useCallback(() => {
@@ -206,13 +212,13 @@ function App() {
   // 사진 촬영
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
-    
+
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
+
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.drawImage(video, 0, 0);
@@ -221,7 +227,7 @@ function App() {
       setConversation([]);
       stopCamera();
       speak('사진이 촬영되었습니다. 질문을 입력해주세요.');
-      
+
       setTimeout(() => questionInputRef.current?.focus(), 100);
     }
   }, [stopCamera, speak]);
@@ -230,13 +236,13 @@ function App() {
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     if (!file.type.startsWith('image/')) {
       setError('이미지 파일만 업로드할 수 있습니다.');
       speak('이미지 파일만 업로드할 수 있습니다.');
       return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
@@ -244,7 +250,7 @@ function App() {
       setConversation([]);
       setError(null);
       speak('이미지가 업로드되었습니다. 질문을 입력해주세요.');
-      
+
       setTimeout(() => questionInputRef.current?.focus(), 100);
     };
     reader.readAsDataURL(file);
@@ -253,24 +259,24 @@ function App() {
   // 스트리밍 질문 제출
   const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
-    
+
     if (!image) {
       setError('먼저 이미지를 촬영하거나 업로드해주세요.');
       speak('먼저 이미지를 촬영하거나 업로드해주세요.');
       return;
     }
-    
+
     if (!question.trim()) {
       setError('질문을 입력해주세요.');
       speak('질문을 입력해주세요.');
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
     setStreamingText('');
     speak('답변을 생성 중입니다.');
-    
+
     // 질문 추가
     const newQuestion: ConversationItem = {
       type: 'question',
@@ -280,10 +286,10 @@ function App() {
     setConversation(prev => [...prev, newQuestion]);
     const currentQuestion = question;
     setQuestion('');
-    
+
     // AbortController 설정
     abortControllerRef.current = new AbortController();
-    
+
     try {
       const response = await fetch(`${API_URL}/api/ask-stream`, {
         method: 'POST',
@@ -297,23 +303,23 @@ function App() {
         }),
         signal: abortControllerRef.current.signal,
       });
-      
+
       if (!response.ok) {
         throw new Error('서버 응답 오류');
       }
-      
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
-      
+
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const data = line.slice(6);
@@ -327,7 +333,7 @@ function App() {
           }
         }
       }
-      
+
       // 스트리밍 완료 후 대화에 추가
       const newAnswer: ConversationItem = {
         type: 'answer',
@@ -337,7 +343,7 @@ function App() {
       setConversation(prev => [...prev, newAnswer]);
       setStreamingText('');
       speak(fullText);
-      
+
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         console.log('스트리밍 중단됨');
@@ -359,20 +365,20 @@ function App() {
       speak('먼저 이미지를 촬영하거나 업로드해주세요.');
       return;
     }
-    
+
     setIsLoading(true);
     setStreamingText('');
     speak('이미지를 분석 중입니다.');
-    
+
     const describeQuestion: ConversationItem = {
       type: 'question',
       text: '이 이미지를 전체적으로 설명해주세요.',
       timestamp: new Date(),
     };
     setConversation(prev => [...prev, describeQuestion]);
-    
+
     abortControllerRef.current = new AbortController();
-    
+
     try {
       const response = await fetch(`${API_URL}/api/describe-stream`, {
         method: 'POST',
@@ -386,19 +392,19 @@ function App() {
         }),
         signal: abortControllerRef.current.signal,
       });
-      
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
-      
+
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const data = line.slice(6);
@@ -409,7 +415,7 @@ function App() {
           }
         }
       }
-      
+
       const newAnswer: ConversationItem = {
         type: 'answer',
         text: fullText,
@@ -418,7 +424,7 @@ function App() {
       setConversation(prev => [...prev, newAnswer]);
       setStreamingText('');
       speak(fullText);
-      
+
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         console.error('API error:', err);
@@ -466,7 +472,7 @@ function App() {
         handleDescribeImage();
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSubmit, stopSpeaking, stopStreaming, handleDescribeImage]);
@@ -476,7 +482,7 @@ function App() {
       <header className="header">
         <h1>👁️ 시각 도우미</h1>
         <p className="subtitle">이미지에 대해 무엇이든 물어보세요</p>
-        
+
         <div className="tts-toggle">
           <label htmlFor="tts-checkbox" className="tts-label">
             <input
@@ -489,8 +495,8 @@ function App() {
             <span>🔊 음성 안내 {ttsEnabled ? '켜짐' : '꺼짐'}</span>
           </label>
           {isSpeaking && (
-            <button 
-              onClick={stopSpeaking} 
+            <button
+              onClick={stopSpeaking}
               className="stop-speaking-btn"
               aria-label="음성 중지"
             >
@@ -505,24 +511,24 @@ function App() {
         <section className="image-section" aria-label="이미지 영역">
           {!image && !cameraActive && (
             <div className="image-input-area">
-              <button 
-                onClick={startCamera} 
+              <button
+                onClick={startCamera}
                 className="btn btn-primary btn-large"
                 aria-label="카메라로 사진 촬영"
               >
                 📷 카메라로 촬영
               </button>
-              
+
               <span className="or-divider">또는</span>
-              
-              <button 
-                onClick={() => fileInputRef.current?.click()} 
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
                 className="btn btn-secondary btn-large"
                 aria-label="갤러리에서 이미지 선택"
               >
                 🖼️ 갤러리에서 선택
               </button>
-              
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -533,7 +539,7 @@ function App() {
               />
             </div>
           )}
-          
+
           {cameraActive && (
             <div className="camera-area">
               <video
@@ -545,15 +551,15 @@ function App() {
                 aria-label="카메라 미리보기"
               />
               <div className="camera-controls">
-                <button 
-                  onClick={capturePhoto} 
+                <button
+                  onClick={capturePhoto}
                   className="btn btn-capture"
                   aria-label="사진 촬영"
                 >
                   📸 촬영
                 </button>
-                <button 
-                  onClick={stopCamera} 
+                <button
+                  onClick={stopCamera}
                   className="btn btn-cancel"
                   aria-label="취소"
                 >
@@ -562,25 +568,25 @@ function App() {
               </div>
             </div>
           )}
-          
+
           {image && (
             <div className="image-preview-area">
-              <img 
-                src={image} 
-                alt="업로드된 이미지" 
+              <img
+                src={image}
+                alt="업로드된 이미지"
                 className="image-preview"
               />
               <div className="image-actions">
-                <button 
-                  onClick={handleDescribeImage} 
+                <button
+                  onClick={handleDescribeImage}
                   className="btn btn-describe"
                   disabled={isLoading}
                   aria-label="이미지 전체 설명 듣기"
                 >
                   📝 전체 설명 듣기
                 </button>
-                <button 
-                  onClick={handleReset} 
+                <button
+                  onClick={handleReset}
                   className="btn btn-reset"
                   aria-label="새 이미지로 시작"
                 >
@@ -589,16 +595,16 @@ function App() {
               </div>
             </div>
           )}
-          
+
           <canvas ref={canvasRef} className="hidden-canvas" aria-hidden="true" />
         </section>
 
         {/* 대화 영역 */}
         {image && (
           <section className="conversation-section" aria-label="대화 영역">
-            <div 
-              className="conversation-list" 
-              role="log" 
+            <div
+              className="conversation-list"
+              role="log"
               aria-live="polite"
               aria-label="질문과 답변 목록"
             >
@@ -609,10 +615,10 @@ function App() {
                   예: "사람이 몇 명 있어?", "날씨가 어때?", "어떤 색이 보여?"
                 </p>
               )}
-              
+
               {conversation.map((item, index) => (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className={`message ${item.type}`}
                   role={item.type === 'answer' ? 'status' : undefined}
                 >
@@ -621,7 +627,7 @@ function App() {
                   </span>
                   <p className="message-text">{item.text}</p>
                   {item.type === 'answer' && (
-                    <button 
+                    <button
                       onClick={() => speak(item.text)}
                       className="btn-speak"
                       aria-label="이 답변 다시 듣기"
@@ -631,7 +637,7 @@ function App() {
                   )}
                 </div>
               ))}
-              
+
               {/* 스트리밍 중인 답변 */}
               {streamingText && (
                 <div className="message answer streaming">
@@ -642,14 +648,14 @@ function App() {
                   </p>
                 </div>
               )}
-              
+
               {isLoading && !streamingText && (
                 <div className="message answer loading" aria-live="assertive">
                   <span className="loading-spinner" aria-hidden="true">⏳</span>
                   <p>답변을 생성하고 있습니다...</p>
                 </div>
               )}
-              
+
               <div ref={conversationEndRef} />
             </div>
 
@@ -684,8 +690,8 @@ function App() {
                 질문을 입력하고 Ctrl+Enter 또는 보내기 버튼을 눌러 전송하세요.
               </p>
               <div className="form-buttons">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn btn-send"
                   disabled={isLoading || !question.trim()}
                   aria-label="질문 보내기"
@@ -693,7 +699,7 @@ function App() {
                   {isLoading ? '⏳' : '📤'} 보내기
                 </button>
                 {isLoading && (
-                  <button 
+                  <button
                     type="button"
                     onClick={stopStreaming}
                     className="btn btn-stop"
@@ -709,8 +715,8 @@ function App() {
 
         {/* 에러 메시지 */}
         {error && (
-          <div 
-            className="error-message" 
+          <div
+            className="error-message"
             role="alert"
             aria-live="assertive"
           >
