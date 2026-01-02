@@ -1,14 +1,16 @@
-# 🏞️ 풍경 도우미 (Landscape Assistant)
+# 🏞️ 시각 도우미 (Vision Assistant)
 
-시각장애인을 위한 **풍경 사진 설명** 웹 서비스입니다.  
-사진을 찍거나 업로드하면 AI가 풍경을 자세히 설명해줍니다.
+시각장애인을 위한 **이미지 & 비디오 설명** 웹 서비스입니다.  
+사진을 찍거나 영상을 녹화하면 AI가 자세히 설명해줍니다.
 
 ## ✨ 주요 기능
 
-- 📷 **카메라 촬영** - 실시간으로 풍경 사진 찍기
-- 🖼️ **갤러리 업로드** - 기존 사진 불러오기
-- ❓ **자유 질문** - "산이 보여?", "하늘 색깔이 어때?" 등
-- 📝 **전체 설명** - 풍경 전체를 상세히 설명
+- 📷 **카메라 촬영** - 실시간으로 사진 찍기
+- 🎬 **비디오 녹화** - 최대 10초 영상 녹화
+- 🖼️ **이미지 업로드** - 기존 사진 불러오기
+- 📁 **비디오 업로드** - 기존 영상 불러오기
+- ❓ **자유 질문** - "뭐가 보여?", "뭐하고 있어?" 등
+- 📝 **전체 설명** - 이미지/영상 전체 설명
 - 🎤 **음성 입력 (STT)** - 말로 질문하기
 - 🔊 **음성 출력 (TTS)** - 답변 읽어주기
 - ⚡ **스트리밍 응답** - 실시간으로 답변 출력
@@ -74,7 +76,7 @@
 ### GPU VRAM 사용량
 - **Qwen2-VL-2B**: ~5GB
 - **M2M100**: ~1.5GB
-- **총합**: ~6.5GB
+- **총합**: ~6GB
 
 ## 🚀 설치 및 실행
 
@@ -151,36 +153,31 @@ npm run dev
 | GET | `/` | 헬스 체크 |
 | POST | `/api/ask` | 이미지 질문 (일반) |
 | POST | `/api/ask-stream` | 이미지 질문 (스트리밍) |
-| POST | `/api/describe` | 전체 설명 (일반) |
-| POST | `/api/describe-stream` | 전체 설명 (스트리밍) |
+| POST | `/api/describe-stream` | 이미지 전체 설명 (스트리밍) |
+| POST | `/api/ask-video` | 비디오 질문 (일반) |
+| POST | `/api/ask-video-stream` | 비디오 질문 (스트리밍) |
+| POST | `/api/describe-video-stream` | 비디오 전체 설명 (스트리밍) |
 
-### 요청 예시
+### 이미지 요청 예시
 
 ```json
 POST /api/ask-stream
 {
   "image_base64": "data:image/jpeg;base64,...",
-  "question": "하늘 색깔이 어때?",
+  "question": "뭐가 보여?",
   "language": "ko"
 }
 ```
 
-### 응답 (SSE 스트리밍)
+### 비디오 요청 예시
 
-```
-data: 맑
-data: 고
-data:  
-data: 파
-data: 란
-data:  
-data: 하
-data: 늘
-data: 이
-data: 에
-data: 요
-data: .
-data: [DONE]
+```json
+POST /api/ask-video-stream
+{
+  "video_base64": "data:video/webm;base64,...",
+  "question": "뭐하고 있어?",
+  "language": "ko"
+}
 ```
 
 ## 📁 프로젝트 구조
