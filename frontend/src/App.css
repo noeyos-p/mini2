@@ -13,20 +13,20 @@
   --color-text: #ffffff;
   --color-text-muted: #a0a0b0;
   --color-border: #3a3a4a;
-  
+
   /* 큰 폰트 크기 */
   --font-size-base: 18px;
   --font-size-lg: 22px;
   --font-size-xl: 28px;
   --font-size-2xl: 36px;
-  
+
   /* 간격 */
   --spacing-xs: 8px;
   --spacing-sm: 12px;
   --spacing-md: 20px;
   --spacing-lg: 32px;
   --spacing-xl: 48px;
-  
+
   /* 반응형 최대 너비 */
   --max-width: 800px;
 }
@@ -147,6 +147,24 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+}
+
+.help-area {
+  margin-top: var(--spacing-md);
+  text-align: center;
+}
+
+.btn-help {
+  background: var(--color-secondary);
+  color: white;
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: var(--font-size-lg);
+  width: 100%;
+  max-width: 400px;
+}
+
+.btn-help:hover {
+  background: #6D28D9;
 }
 
 /* 이미지 섹션 */
@@ -333,11 +351,22 @@ body {
 }
 
 /* 미디어 버튼 그리드 */
+/* 미디어 버튼 그리드 (세로 정렬 강제) */
 .media-buttons {
   display: flex;
+  flex-direction: column;
+  /* 항상 세로 정렬 */
   gap: var(--spacing-md);
-  flex-wrap: wrap;
-  justify-content: center;
+  width: 100%;
+  max-width: 400px;
+  /* 너무 넓어지지 않게 제한 */
+  margin: 0 auto;
+  /* 중앙 정렬 */
+}
+
+.media-buttons .btn {
+  width: 100%;
+  /* 버튼 꽉 차게 */
 }
 
 /* 녹화 인디케이터 */
@@ -416,6 +445,7 @@ body {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -473,8 +503,13 @@ body {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 스트리밍 커서 */
@@ -486,8 +521,16 @@ body {
 }
 
 @keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .message.streaming {
@@ -516,7 +559,8 @@ body {
 .input-wrapper {
   display: flex;
   gap: var(--spacing-sm);
-  align-items: flex-end;
+  align-items: stretch;
+  /* 높이 맞춤 */
 }
 
 .question-input {
@@ -528,7 +572,8 @@ body {
   border-radius: 12px;
   color: var(--color-text);
   resize: vertical;
-  min-height: 60px;
+  min-height: 100px;
+  /* 입력창 높이 확대 */
   font-family: inherit;
 }
 
@@ -550,13 +595,15 @@ body {
 /* 마이크 버튼 */
 .btn-mic {
   padding: var(--spacing-md);
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-2xl);
+  /* 아이콘 크기 확대 */
   background: var(--color-surface);
   color: var(--color-text);
   border: 2px solid var(--color-border);
   border-radius: 12px;
   min-width: 60px;
-  height: 60px;
+  height: auto;
+  /* 높이 자동 (textarea에 맞춤) */
   transition: all 0.2s;
 }
 
@@ -572,13 +619,22 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 .form-buttons {
   display: flex;
   gap: var(--spacing-sm);
+  justify-content: center;
+  /* 가운데 정렬 */
 }
 
 /* 에러 메시지 */
@@ -610,43 +666,45 @@ body {
     --font-size-xl: 22px;
     --font-size-2xl: 28px;
   }
-  
+
   .app {
     padding: var(--spacing-sm);
   }
-  
+
   .btn-large {
     min-width: 100%;
     padding: var(--spacing-md);
   }
-  
+
   .image-input-area {
     padding: var(--spacing-md);
   }
-  
+
   .camera-controls,
-  .image-actions {
+  .image-actions,
+  .media-buttons {
     flex-direction: column;
     width: 100%;
   }
-  
+
   .camera-controls .btn,
-  .image-actions .btn {
+  .image-actions .btn,
+  .media-buttons .btn {
     width: 100%;
   }
-  
+
   .input-wrapper {
     flex-direction: column;
   }
-  
+
   .btn-mic {
     width: 100%;
   }
-  
+
   .form-buttons {
     flex-direction: column;
   }
-  
+
   .form-buttons .btn {
     width: 100%;
   }
@@ -660,11 +718,11 @@ body {
     --color-border: #ffffff;
     --color-text: #ffffff;
   }
-  
+
   .btn {
     border-width: 3px;
   }
-  
+
   .message {
     border-left-width: 6px;
   }
@@ -672,6 +730,7 @@ body {
 
 /* 모션 감소 모드 */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {

@@ -37,29 +37,43 @@ interface ConversationItem {
   text: string;
   timestamp: Date;
 }
+const USAGE_INSTRUCTIONS = `
+앱 사용 방법을 안내해 드립니다.
+첫째, 화면의 버튼을 한 번 누르면 어떤 버튼인지 음성으로 알려줍니다.
+둘째, 선택한 기능을 실행하려면 화면의 아무 곳이나 두 번 빠르게 두드리세요.
+셋째, 카메라 버튼을 눌러 사진을 찍거나, 이미지 및 영상을 업로드할 수 있습니다.
+넷째, 질문하기 버튼을 누르고 마이크에 대고 궁금한 점을 물어보세요.
+설명을 다시 들으려면 사용법 듣기 버튼을 선택하고 화면을 두 번 두드리세요.
+`;
 
 function App() {
   // 미디어 상태
   const [image, setImage] = useState<string | null>(null);
   const [video, setVideo] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
-  
+
   // UI 상태
   const [question, setQuestion] = useState('');
   const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
-  
+
   // 음성 상태
+  const [ttsEnabled, setTtsEnabled] = useState(true); // ✅ 기본값 ON
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
-  
+
+  // 접근성 상태 (선택된 액션)
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+
+
   // 카메라/녹화 상태
   const [cameraActive, setCameraActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null); // ✅ 비디오 길이 상태 추가
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,15 +88,19 @@ function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
+  const mimeTypeRef = useRef<string>('video/webm');
+  const isCancelledRef = useRef<boolean>(false); // ✅ 취소 상태 추적
 
   // 스크롤
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation, streamingText]);
 
+  // TTS (항상 켜짐)
   // TTS
   const speak = useCallback((text: string) => {
-    if (!ttsEnabled || !('speechSynthesis' in window)) return;
+    if (!ttsEnabled) return; // ✅ TTS 꺼져있으면 중단
+    if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ko-KR';
@@ -98,6 +116,40 @@ function App() {
     setIsSpeaking(false);
   }, []);
 
+  // 접근성 선택 핸들러 (TTS 켜짐: 선택/안내, 꺼짐: 즉시 실행)
+  const handleSelection = useCallback((label: string, action?: () => void) => {
+    return (e?: React.SyntheticEvent) => {
+      e?.preventDefault();
+      e?.stopPropagation();
+
+      // ✅ TTS 꺼져있으면 일반 버튼처럼 원클릭 실행
+      if (!ttsEnabled) {
+        action?.();
+        return;
+      }
+
+      speak(`${label} 선택됨. 실행하려면 화면을 두 번 두드리세요.`);
+      pendingActionRef.current = action || null;
+    };
+  }, [speak, ttsEnabled]);
+
+  // 전역 더블 클릭 핸들러 (실행)
+  useEffect(() => {
+    const handleGlobalDoubleClick = () => {
+      if (pendingActionRef.current) {
+        pendingActionRef.current();
+        pendingActionRef.current = null; // 실행 후 초기화
+      }
+    };
+    window.addEventListener('dblclick', handleGlobalDoubleClick);
+    return () => window.removeEventListener('dblclick', handleGlobalDoubleClick);
+  }, []);
+
+  // 입력창 포커스 핸들러 (바로 입력 가능 + 음성 안내)
+  const handleInputFocus = useCallback(() => {
+    speak('질문 입력창입니다. 궁금한 점을 입력해주세요.');
+  }, [speak]);
+
   // STT 초기화
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -106,20 +158,37 @@ function App() {
       recognition.lang = 'ko-KR';
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.onstart = () => setIsListening(true);
+      // recognition.maxAlternatives = 1; // 기본값 사용 (TS 에러 방지)
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        speak('듣고 있습니다. 말씀해주세요.'); // ✅ 듣기 시작 피드백
+      };
+
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = Array.from(event.results).map(result => result[0].transcript).join('');
         setQuestion(transcript);
       };
+
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('STT Error:', event.error);
         setIsListening(false);
         if (event.error === 'not-allowed') {
           setError('마이크 권한이 필요합니다.');
           speak('마이크 권한이 필요합니다.');
+        } else if (event.error === 'no-speech') {
+          // 말하지 않아서 종료된 경우 조용히 넘어가거나 힌트 제공
+          // speak('음성이 감지되지 않았습니다.');
+        } else {
+          speak('음성 인식 오류가 발생했습니다.');
         }
       };
-      recognition.onend = () => setIsListening(false);
+
+      recognition.onend = () => {
+        setIsListening(false);
+        // speak('음성 인식이 끝났습니다.'); // 너무 수다스러울 수 있어 생략
+      };
+
       recognitionRef.current = recognition;
     }
     return () => { if (recognitionRef.current) recognitionRef.current.abort(); };
@@ -128,13 +197,16 @@ function App() {
   const toggleListening = useCallback(() => {
     if (!recognitionRef.current) {
       setError('음성 인식을 지원하지 않는 브라우저입니다.');
+      speak('이 브라우저는 음성 인식을 지원하지 않습니다.');
       return;
     }
     if (isListening) {
       recognitionRef.current.stop();
+      speak('음성 인식을 중지합니다.');
     } else {
+      // 🛑 듣고 있던 중 TTS가 말하면 인식이 겹칠 수 있으므로 cancel 먼저
+      window.speechSynthesis.cancel();
       recognitionRef.current.start();
-      speak('말씀하세요.');
     }
   }, [isListening, speak]);
 
@@ -170,11 +242,14 @@ function App() {
   }, [cameraActive, speak]);
 
   const stopCamera = useCallback(() => {
+    isCancelledRef.current = true; // ✅ 취소 플래그 설정
+
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    if (mediaRecorderRef.current && isRecording) {
+    // isRecording 의존성을 제거하고 Ref 상태를 확인 (useEffect 의존성 루프 방지)
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
     if (streamRef.current) {
@@ -187,7 +262,7 @@ function App() {
     setCameraActive(false);
     setIsRecording(false);
     setRecordingTime(0);
-  }, [isRecording]);
+  }, []); // 의존성 배열 비움 (Stable Function)
 
   // 사진 촬영
   const capturePhoto = useCallback(() => {
@@ -210,83 +285,107 @@ function App() {
     }
   }, [stopCamera, speak]);
 
-// 1️⃣ 녹화 중지 (먼저 선언)
-const stopRecording = useCallback((): void => {
-  if (!isRecording) return;
-
-  if (recordingTimerRef.current) {
-    clearInterval(recordingTimerRef.current);
-    recordingTimerRef.current = null;
-  }
-
-  mediaRecorderRef.current?.stop();
-  setIsRecording(false);
-}, [isRecording]);
-
-
-// 2️⃣ 녹화 시작
-const startRecording = useCallback((): void => {
-  if (!streamRef.current) return;
-
-  recordedChunksRef.current = [];
-
-  const mediaRecorder = new MediaRecorder(streamRef.current, {
-    mimeType: 'video/webm',
-  });
-
-  mediaRecorder.ondataavailable = (event: BlobEvent) => {
-    if (event.data.size > 0) {
-      recordedChunksRef.current.push(event.data);
+  // 1️⃣ 녹화 중지 (먼저 선언)
+  const stopRecording = useCallback((): void => {
+    // React state(isRecording) 대신 Ref 상태를 확인하여 Stale Closure 문제 방지
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
     }
-  };
 
-  mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-    const reader = new FileReader();
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
 
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setVideo(base64);
-      setImage(null);
-      setMediaType('video');
-      setConversation([]);
-      stopCamera();
-      speak('영상이 녹화되었습니다.');
-      setTimeout(() => questionInputRef.current?.focus(), 100);
-    };
-
-    reader.readAsDataURL(blob);
-  };
-
-  mediaRecorderRef.current = mediaRecorder;
-  mediaRecorder.start();
-
-  setIsRecording(true);
-  setRecordingTime(0);
-
-  // ⏱️ 10초 자동 중지
-  recordingTimerRef.current = window.setInterval(() => {
-    setRecordingTime(prev => {
-      if (prev >= 9) {
-        stopRecording(); // ✅ 자동 중지 + 버튼 상태 복구
-        return 10;
-      }
-      return prev + 1;
-    });
-  }, 1000);
-
-  speak('녹화를 시작합니다. 최대 10초입니다.');
-}, [speak, stopCamera, stopRecording]);
+    setIsRecording(false);
+  }, []);
 
 
-// 3️⃣ 녹화 토글 버튼용
-const toggleRecording = useCallback((): void => {
-  if (isRecording) {
-    stopRecording();
-  } else {
-    startRecording();
-  }
-}, [isRecording, startRecording, stopRecording]);
+  // 2️⃣ 녹화 시작
+  const startRecording = useCallback((): void => {
+    if (!streamRef.current) return;
+
+    try {
+      // 1. 브라우저 기본 설정으로 레코더 생성 (호환성 최적화)
+      const mediaRecorder = new MediaRecorder(streamRef.current);
+
+      // 2. 브라우저가 선택한 실제 MIME Type 저장 (Blob 생성 시 사용)
+      mimeTypeRef.current = mediaRecorder.mimeType;
+      console.log('Recording with MIME type:', mimeTypeRef.current);
+
+      recordedChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        // ✅ 취소된 경우 저장하지 않음
+        if (isCancelledRef.current) {
+          console.log('Recording cancelled');
+          return;
+        }
+
+        // ✅ 저장된 정확한 MIME Type으로 Blob 생성
+        const blob = new Blob(recordedChunksRef.current, { type: mimeTypeRef.current });
+        console.log('Created blob with type:', mimeTypeRef.current, 'size:', blob.size);
+
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          setVideo(base64);
+          setImage(null);
+          setMediaType('video');
+          setConversation([]);
+          stopCamera();
+          speak('영상이 녹화되었습니다.');
+          setTimeout(() => questionInputRef.current?.focus(), 100);
+        };
+
+        reader.readAsDataURL(blob);
+      };
+
+      isCancelledRef.current = false; // ✅ 녹화 시작 시 취소 상태 초기화
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+
+      setIsRecording(true);
+      setRecordingTime(0);
+      setVideoDuration(null);
+
+      // ⏱️ 10초 후 자동 중지
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 9) { // 0~9 -> 10초 도달 시 중지
+            stopRecording();
+            setVideoDuration(10);
+            return 10;
+          }
+          // UI 업데이트용 (recordingTime은 타이머용)
+          return prev + 1;
+        });
+      }, 1000);
+
+      speak('녹화를 시작합니다. 10초 동안 녹화됩니다.');
+    } catch (err) {
+      console.error('Recording error:', err);
+      setError('녹화를 시작할 수 없습니다. (브라우저 호환성 또는 권한 문제)');
+      setIsRecording(false);
+    }
+  }, [speak, stopCamera, stopRecording]);
+
+
+  // 3️⃣ 녹화 토글 버튼용
+  const toggleRecording = useCallback((): void => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
 
 
 
@@ -357,20 +456,23 @@ const toggleRecording = useCallback((): void => {
     setStreamingText('');
     speak('답변을 생성 중입니다.');
 
+    // ✅ 물음표 자동 추가
+    const formattedQuestion = question.trim() + (question.trim().endsWith('?') ? '' : '?');
+
     const newQuestion: ConversationItem = {
       type: 'question',
-      text: question,
+      text: formattedQuestion, // ✅ 포맷된 질문 사용
       timestamp: new Date(),
     };
     setConversation(prev => [...prev, newQuestion]);
-    const currentQuestion = question;
+    const currentQuestion = formattedQuestion; // ✅ API 요청에도 사용
     setQuestion('');
 
     abortControllerRef.current = new AbortController();
 
     try {
       const endpoint = mediaType === 'video' ? '/api/ask-video-stream' : '/api/ask-stream';
-      const body = mediaType === 'video' 
+      const body = mediaType === 'video'
         ? { video_base64: video, question: currentQuestion, language: 'ko' }
         : { image_base64: image, question: currentQuestion, language: 'ko' };
 
@@ -538,20 +640,28 @@ const toggleRecording = useCallback((): void => {
         <p className="subtitle">이미지와 영상에 대해 물어보세요</p>
 
         <div className="tts-toggle">
-          <label htmlFor="tts-checkbox" className="tts-label">
+          <label className="tts-label">
             <input
-              id="tts-checkbox"
               type="checkbox"
               checked={ttsEnabled}
               onChange={(e) => setTtsEnabled(e.target.checked)}
             />
-            <span>🔊 음성 안내 {ttsEnabled ? '켜짐' : '꺼짐'}</span>
+            <span>🔊 음성 안내 켜기</span>
           </label>
           {isSpeaking && (
             <button onClick={stopSpeaking} className="stop-speaking-btn">
               ⏹️ 음성 중지
             </button>
           )}
+        </div>
+
+        <div className="help-area">
+          <button
+            onClick={handleSelection('앱 사용법 듣기', () => speak(USAGE_INSTRUCTIONS))}
+            className="btn btn-help"
+          >
+            ❓ 사용법 듣기
+          </button>
         </div>
       </header>
 
@@ -561,13 +671,13 @@ const toggleRecording = useCallback((): void => {
           {!image && !video && !cameraActive && (
             <div className="image-input-area">
               <div className="media-buttons">
-                <button onClick={startCamera} className="btn btn-primary btn-large">
+                <button onClick={handleSelection('카메라 실행', startCamera)} className="btn btn-primary btn-large">
                   📷 카메라
                 </button>
-                <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary btn-large">
+                <button onClick={handleSelection('이미지 업로드', () => fileInputRef.current?.click())} className="btn btn-secondary btn-large">
                   🖼️ 이미지
                 </button>
-                <button onClick={() => videoFileInputRef.current?.click()} className="btn btn-secondary btn-large">
+                <button onClick={handleSelection('영상 업로드', () => videoFileInputRef.current?.click())} className="btn btn-secondary btn-large">
                   🎬 영상
                 </button>
               </div>
@@ -589,57 +699,55 @@ const toggleRecording = useCallback((): void => {
             </div>
           )}
 
-         {cameraActive && (
-  <div className="camera-area">
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className="camera-preview"
-    />
+          {cameraActive && (
+            <div className="camera-area">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="camera-preview"
+              />
 
-    {isRecording && (
-      <div className="recording-indicator">
-        🔴 녹화 중 {recordingTime}초 / 10초
-      </div>
-    )}
+              {isRecording && (
+                <div className="recording-indicator">
+                  🔴 녹화 중 {recordingTime}초 / 10초
+                </div>
+              )}
 
-    <div className="camera-controls">
-      <button
-        onClick={capturePhoto}
-        className="btn btn-capture"
-        disabled={isRecording}
-      >
-        📸 사진
-      </button>
+              <div className="camera-controls">
+                <button
+                  onClick={handleSelection('사진 촬영', capturePhoto)}
+                  className="btn btn-capture"
+                  disabled={isRecording}
+                >
+                  📸 사진
+                </button>
 
-      {/* ✅ 여기: 녹화 토글 버튼 */}
-      <button
-        type="button"
-        onClick={toggleRecording}
-        className={`btn ${isRecording ? 'btn-stop-record' : 'btn-record'}`}
-      >
-        {isRecording ? '⏹️ 녹화 중지' : '🎬 녹화 시작'}
-      </button>
+                <button
+                  type="button"
+                  onClick={handleSelection(isRecording ? '녹화 중지' : '녹화 시작', toggleRecording)}
+                  className={`btn ${isRecording ? 'btn-stop-record' : 'btn-record'}`}
+                >
+                  {isRecording ? '⏹️ 녹화 중지' : '🎬 녹화 시작'}
+                </button>
 
-      <button onClick={stopCamera} className="btn btn-cancel">
-        ❌ 취소
-      </button>
-    </div>
-  </div>
-)}
-
+                <button onClick={handleSelection('취소', stopCamera)} className="btn btn-cancel">
+                  ❌ 취소
+                </button>
+              </div>
+            </div>
+          )}
 
           {image && (
             <div className="image-preview-area">
               <div className="media-badge">📷 이미지</div>
               <img src={image} alt="업로드된 이미지" className="image-preview" />
               <div className="image-actions">
-                <button onClick={handleDescribe} className="btn btn-describe" disabled={isLoading}>
+                <button onClick={handleSelection('전체 설명 요청', handleDescribe)} className="btn btn-describe" disabled={isLoading}>
                   📝 전체 설명
                 </button>
-                <button onClick={handleReset} className="btn btn-reset">
+                <button onClick={handleSelection('새로 시작', handleReset)} className="btn btn-reset">
                   🔄 새로 시작
                 </button>
               </div>
@@ -648,13 +756,15 @@ const toggleRecording = useCallback((): void => {
 
           {video && (
             <div className="image-preview-area">
-              <div className="media-badge">🎬 영상</div>
+              <div className="media-badge">
+                🎬 영상 {videoDuration ? `(${videoDuration}초)` : ''}
+              </div>
               <video src={video} controls className="video-preview" />
               <div className="image-actions">
-                <button onClick={handleDescribe} className="btn btn-describe" disabled={isLoading}>
+                <button onClick={handleSelection('전체 설명 요청', handleDescribe)} className="btn btn-describe" disabled={isLoading}>
                   📝 전체 설명
                 </button>
-                <button onClick={handleReset} className="btn btn-reset">
+                <button onClick={handleSelection('새로 시작', handleReset)} className="btn btn-reset">
                   🔄 새로 시작
                 </button>
               </div>
@@ -681,7 +791,7 @@ const toggleRecording = useCallback((): void => {
                   <span className="message-icon">{item.type === 'question' ? '❓' : '💬'}</span>
                   <p className="message-text">{item.text}</p>
                   {item.type === 'answer' && (
-                    <button onClick={() => speak(item.text)} className="btn-speak">🔊</button>
+                    <button onClick={handleSelection('답변 다시 듣기', () => speak(item.text))} className="btn-speak">🔊</button>
                   )}
                 </div>
               ))}
@@ -711,6 +821,7 @@ const toggleRecording = useCallback((): void => {
                   ref={questionInputRef}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
+                  onClick={handleInputFocus}
                   placeholder={`${mediaType === 'video' ? '영상' : '이미지'}에 대해 질문하세요...`}
                   className="question-input"
                   disabled={isLoading}
@@ -718,7 +829,7 @@ const toggleRecording = useCallback((): void => {
                 />
                 <button
                   type="button"
-                  onClick={toggleListening}
+                  onClick={handleSelection(isListening ? '음성 입력 중지' : '음성 입력 시작', toggleListening)}
                   className={`btn btn-mic ${isListening ? 'listening' : ''}`}
                   disabled={isLoading}
                 >
@@ -726,11 +837,20 @@ const toggleRecording = useCallback((): void => {
                 </button>
               </div>
               <div className="form-buttons">
-                <button type="submit" className="btn btn-send" disabled={isLoading || !question.trim()}>
+                <button
+                  type="button"
+                  onClick={handleSelection('질문 보내기', handleSubmit)}
+                  className="btn btn-send"
+                  disabled={isLoading || !question.trim()}
+                >
                   {isLoading ? '⏳' : '📤'} 보내기
                 </button>
                 {isLoading && (
-                  <button type="button" onClick={stopStreaming} className="btn btn-stop">
+                  <button
+                    type="button"
+                    onClick={handleSelection('답변 생성 중지', stopStreaming)}
+                    className="btn btn-stop"
+                  >
                     ⏹️ 중지
                   </button>
                 )}
@@ -748,7 +868,7 @@ const toggleRecording = useCallback((): void => {
 
       <footer className="footer">
         <p>
-          🎤 마이크로 음성 질문 | 🎬 10초 영상 녹화 | Ctrl+Enter (전송) | ESC (중지)
+          🎤 마이크로 음성 질문 | 🎬 10초 영상 녹화 | 버튼 선택 후 화면 더블탭하여 실행
         </p>
       </footer>
     </div>
