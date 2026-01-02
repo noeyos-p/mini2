@@ -59,21 +59,18 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
 
-  // 음성 상태
-  const [ttsEnabled, setTtsEnabled] = useState(true); // ✅ 기본값 ON
+  // 음성 상태 (항상 활성화)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
   // 접근성 상태 (선택된 액션)
   const pendingActionRef = useRef<(() => void) | null>(null);
 
-
-
   // 카메라/녹화 상태
   const [cameraActive, setCameraActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState<number | null>(null); // ✅ 비디오 길이 상태 추가
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,17 +86,15 @@ function App() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const mimeTypeRef = useRef<string>('video/webm');
-  const isCancelledRef = useRef<boolean>(false); // ✅ 취소 상태 추적
+  const isCancelledRef = useRef<boolean>(false);
 
   // 스크롤
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation, streamingText]);
 
-  // TTS (항상 켜짐)
-  // TTS
+  // TTS (항상 활성화)
   const speak = useCallback((text: string) => {
-    if (!ttsEnabled) return; // ✅ TTS 꺼져있으면 중단
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -109,43 +104,37 @@ function App() {
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
-  }, [ttsEnabled]);
+  }, []);
 
   const stopSpeaking = useCallback(() => {
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
   }, []);
 
-  // 접근성 선택 핸들러 (TTS 켜짐: 선택/안내, 꺼짐: 즉시 실행)
+  // 접근성 선택 핸들러 (항상 음성 안내 후 더블클릭으로 실행)
   const handleSelection = useCallback((label: string, action?: () => void) => {
     return (e?: React.SyntheticEvent) => {
       e?.preventDefault();
       e?.stopPropagation();
 
-      // ✅ TTS 꺼져있으면 일반 버튼처럼 원클릭 실행
-      if (!ttsEnabled) {
-        action?.();
-        return;
-      }
-
       speak(`${label} 선택됨. 실행하려면 화면을 두 번 두드리세요.`);
       pendingActionRef.current = action || null;
     };
-  }, [speak, ttsEnabled]);
+  }, [speak]);
 
   // 전역 더블 클릭 핸들러 (실행)
   useEffect(() => {
     const handleGlobalDoubleClick = () => {
       if (pendingActionRef.current) {
         pendingActionRef.current();
-        pendingActionRef.current = null; // 실행 후 초기화
+        pendingActionRef.current = null;
       }
     };
     window.addEventListener('dblclick', handleGlobalDoubleClick);
     return () => window.removeEventListener('dblclick', handleGlobalDoubleClick);
   }, []);
 
-  // 입력창 포커스 핸들러 (바로 입력 가능 + 음성 안내)
+  // 입력창 포커스 핸들러
   const handleInputFocus = useCallback(() => {
     speak('질문 입력창입니다. 궁금한 점을 입력해주세요.');
   }, [speak]);
@@ -158,11 +147,10 @@ function App() {
       recognition.lang = 'ko-KR';
       recognition.continuous = false;
       recognition.interimResults = true;
-      // recognition.maxAlternatives = 1; // 기본값 사용 (TS 에러 방지)
 
       recognition.onstart = () => {
         setIsListening(true);
-        speak('듣고 있습니다. 말씀해주세요.'); // ✅ 듣기 시작 피드백
+        speak('듣고 있습니다. 말씀해주세요.');
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -176,17 +164,13 @@ function App() {
         if (event.error === 'not-allowed') {
           setError('마이크 권한이 필요합니다.');
           speak('마이크 권한이 필요합니다.');
-        } else if (event.error === 'no-speech') {
-          // 말하지 않아서 종료된 경우 조용히 넘어가거나 힌트 제공
-          // speak('음성이 감지되지 않았습니다.');
-        } else {
+        } else if (event.error !== 'no-speech') {
           speak('음성 인식 오류가 발생했습니다.');
         }
       };
 
       recognition.onend = () => {
         setIsListening(false);
-        // speak('음성 인식이 끝났습니다.'); // 너무 수다스러울 수 있어 생략
       };
 
       recognitionRef.current = recognition;
@@ -204,7 +188,6 @@ function App() {
       recognitionRef.current.stop();
       speak('음성 인식을 중지합니다.');
     } else {
-      // 🛑 듣고 있던 중 TTS가 말하면 인식이 겹칠 수 있으므로 cancel 먼저
       window.speechSynthesis.cancel();
       recognitionRef.current.start();
     }
@@ -222,7 +205,7 @@ function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
-        audio: true, // 비디오 녹화용
+        audio: true,
       });
       streamRef.current = stream;
       setCameraActive(true);
@@ -242,13 +225,12 @@ function App() {
   }, [cameraActive, speak]);
 
   const stopCamera = useCallback(() => {
-    isCancelledRef.current = true; // ✅ 취소 플래그 설정
+    isCancelledRef.current = true;
 
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    // isRecording 의존성을 제거하고 Ref 상태를 확인 (useEffect 의존성 루프 방지)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -262,7 +244,7 @@ function App() {
     setCameraActive(false);
     setIsRecording(false);
     setRecordingTime(0);
-  }, []); // 의존성 배열 비움 (Stable Function)
+  }, []);
 
   // 사진 촬영
   const capturePhoto = useCallback(() => {
@@ -285,9 +267,8 @@ function App() {
     }
   }, [stopCamera, speak]);
 
-  // 1️⃣ 녹화 중지 (먼저 선언)
+  // 녹화 중지
   const stopRecording = useCallback((): void => {
-    // React state(isRecording) 대신 Ref 상태를 확인하여 Stale Closure 문제 방지
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -300,16 +281,12 @@ function App() {
     setIsRecording(false);
   }, []);
 
-
-  // 2️⃣ 녹화 시작
+  // 녹화 시작
   const startRecording = useCallback((): void => {
     if (!streamRef.current) return;
 
     try {
-      // 1. 브라우저 기본 설정으로 레코더 생성 (호환성 최적화)
       const mediaRecorder = new MediaRecorder(streamRef.current);
-
-      // 2. 브라우저가 선택한 실제 MIME Type 저장 (Blob 생성 시 사용)
       mimeTypeRef.current = mediaRecorder.mimeType;
       console.log('Recording with MIME type:', mimeTypeRef.current);
 
@@ -322,13 +299,11 @@ function App() {
       };
 
       mediaRecorder.onstop = () => {
-        // ✅ 취소된 경우 저장하지 않음
         if (isCancelledRef.current) {
           console.log('Recording cancelled');
           return;
         }
 
-        // ✅ 저장된 정확한 MIME Type으로 Blob 생성
         const blob = new Blob(recordedChunksRef.current, { type: mimeTypeRef.current });
         console.log('Created blob with type:', mimeTypeRef.current, 'size:', blob.size);
 
@@ -348,7 +323,7 @@ function App() {
         reader.readAsDataURL(blob);
       };
 
-      isCancelledRef.current = false; // ✅ 녹화 시작 시 취소 상태 초기화
+      isCancelledRef.current = false;
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
 
@@ -356,15 +331,13 @@ function App() {
       setRecordingTime(0);
       setVideoDuration(null);
 
-      // ⏱️ 10초 후 자동 중지
       recordingTimerRef.current = window.setInterval(() => {
         setRecordingTime(prev => {
-          if (prev >= 9) { // 0~9 -> 10초 도달 시 중지
+          if (prev >= 9) {
             stopRecording();
             setVideoDuration(10);
             return 10;
           }
-          // UI 업데이트용 (recordingTime은 타이머용)
           return prev + 1;
         });
       }, 1000);
@@ -377,8 +350,7 @@ function App() {
     }
   }, [speak, stopCamera, stopRecording]);
 
-
-  // 3️⃣ 녹화 토글 버튼용
+  // 녹화 토글
   const toggleRecording = useCallback((): void => {
     if (isRecording) {
       stopRecording();
@@ -386,8 +358,6 @@ function App() {
       startRecording();
     }
   }, [isRecording, startRecording, stopRecording]);
-
-
 
   // 이미지 파일 업로드
   const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -418,7 +388,6 @@ function App() {
       setError('비디오 파일만 업로드할 수 있습니다.');
       return;
     }
-    // 파일 크기 제한 (50MB)
     if (file.size > 50 * 1024 * 1024) {
       setError('비디오 파일이 너무 큽니다. (최대 50MB)');
       return;
@@ -456,16 +425,15 @@ function App() {
     setStreamingText('');
     speak('답변을 생성 중입니다.');
 
-    // ✅ 물음표 자동 추가
     const formattedQuestion = question.trim() + (question.trim().endsWith('?') ? '' : '?');
 
     const newQuestion: ConversationItem = {
       type: 'question',
-      text: formattedQuestion, // ✅ 포맷된 질문 사용
+      text: formattedQuestion,
       timestamp: new Date(),
     };
     setConversation(prev => [...prev, newQuestion]);
-    const currentQuestion = formattedQuestion; // ✅ API 요청에도 사용
+    const currentQuestion = formattedQuestion;
     setQuestion('');
 
     abortControllerRef.current = new AbortController();
@@ -639,21 +607,14 @@ function App() {
         <h1>👁️ 시각 도우미</h1>
         <p className="subtitle">이미지와 영상에 대해 물어보세요</p>
 
-        <div className="tts-toggle">
-          <label className="tts-label">
-            <input
-              type="checkbox"
-              checked={ttsEnabled}
-              onChange={(e) => setTtsEnabled(e.target.checked)}
-            />
-            <span>🔊 음성 안내 켜기</span>
-          </label>
-          {isSpeaking && (
+        {/* 음성 중지 버튼만 표시 */}
+        {isSpeaking && (
+          <div className="tts-controls">
             <button onClick={stopSpeaking} className="stop-speaking-btn">
               ⏹️ 음성 중지
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="help-area">
           <button
