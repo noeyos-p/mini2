@@ -29,7 +29,7 @@ device = None
 
 # 모델 설정
 VL_MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"
-TRANSLATOR_MODEL_ID = "facebook/m2m100_418M"
+TRANSLATOR_MODEL_ID = "facebook/m2m100_418M"  # 다시 M2M100 (더 빠르고 안정적)
 
 
 # =============================================
@@ -186,9 +186,22 @@ def convert_question_to_english(question: str) -> str:
 # =============================================
 
 def clean_translation(text: str) -> str:
-    """번역 결과 정리 (풍경 설명 최적화)"""
+    """번역 결과 정리 (자연스러운 대화체)"""
     if not text:
         return ""
+    
+    # 마크다운 형식 제거
+    text = re.sub(r'#{1,6}\s*', '', text)  # ### 헤더 제거
+    text = re.sub(r'\*{1,2}([^*]+)\*{1,2}', r'\1', text)  # **bold** 제거
+    text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)  # - 리스트 제거
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)  # 1. 숫자 리스트 제거
+    text = re.sub(r'`([^`]+)`', r'\1', text)  # `code` 제거
+    
+    # 불필요한 라벨 제거
+    text = re.sub(r'장면\s*설명\s*:?\s*', '', text)
+    text = re.sub(r'배경\s*요소\s*:?\s*', '', text)
+    text = re.sub(r'산\s*범위\s*:?\s*', '산이 ', text)
+    text = re.sub(r':\s*:', ':', text)
     
     # 중복 단어 제거
     text = re.sub(r'\b(\w+)\s+\1\b', r'\1', text)
@@ -197,57 +210,173 @@ def clean_translation(text: str) -> str:
     text = re.sub(r'[!]{2,}', '!', text)
     text = re.sub(r'[.]{2,}', '.', text)
     text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\n+', ' ', text)
     
     # 불필요한 번역투 표현 제거
     remove_patterns = [
         r'이미지에서\s*',
         r'사진에서\s*',
+        r'그림은\s*',
+        r'다음과\s*같은\s*',
+        r'기능을\s*가진\s*',
+        r'보여줍니다\s*',
         r'그것은\s*',
         r'이것은\s*',
         r'^예[,.\s]*',
         r'^네[,.\s]*',
+        r'조건을\s*',
+        r'두\s*개의\s*동물이\s*',
+        r'서로\s*옆에\s*',
+        r'프레임의\s*',
+        r'화면의\s*',
+        r'이\s*동물\s*두\s*마리.*?요\.',
+        r'자연\s*환경의\s*한가운데.*',
+        r'예를\s*들어.*',
+        r'근처에.*요\.',
+        r'그들은\s*서로.*',
+        r'\(.*?\)',
+        r'것처럼.*?있습니다.*',
+        r'더\s*자세한.*',
+        r'그\s*위에.*?있네요\.',
+        r'투입되어.*',
     ]
     for pattern in remove_patterns:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
     
-    # 자연스러운 한국어로 변환
+    # 자연스러운 대화체로 변환 (~네요 + ~해요 혼합)
     replacements = [
-        # 존댓말 변환
+        # 관찰/발견 표현 → ~네요
+        ('있습니다.', '있네요.'),
+        ('있어요.', '있네요.'),
+        ('보입니다.', '보이네요.'),
+        ('보여요.', '보이네요.'),
+        ('있다.', '있네요.'),
+        ('보인다.', '보이네요.'),
+        
+        # 상태/설명 표현 → ~해요/~이에요
         ('입니다.', '이에요.'),
-        ('있습니다.', '있어요.'),
         ('없습니다.', '없어요.'),
         ('됩니다.', '돼요.'),
         ('합니다.', '해요.'),
-        ('봅니다.', '봐요.'),
         ('습니다.', '어요.'),
         ('ㅂ니다.', '요.'),
         ('이다.', '이에요.'),
-        ('있다.', '있어요.'),
         ('없다.', '없어요.'),
         ('한다.', '해요.'),
-        ('보인다.', '보여요.'),
         ('된다.', '돼요.'),
         
-        # 풍경 관련 자연스러운 표현
-        ('반사', '비치고'),
-        ('반영', '비치고'),
-        ('위치하고', '있고'),
-        ('존재하고', '있고'),
+        # 형용사 자연스럽게
+        ('맑습니다.', '맑아요.'),
+        ('푸릅니다.', '푸르네요.'),
+        ('밝습니다.', '밝아요.'),
+        ('어둡습니다.', '어두워요.'),
+        
+        # ⭐ 번역 오류 수정
+        ('표지판', '무늬'),
+        ('냄비', '털'),
+        ('프레임', '화면'),
+        ('코트', '털'),
+        ('마킹', '무늬'),
+        ('패치', '무늬'),
+        ('벽돌', '무늬'),
+        ('스팟', '점'),
+        ('콘크리트 바닥', '바닥'),
+        ('야외 환경을', ''),
+        ('야외 조건을', ''),
+        ('환경을', ''),
+        ('구멍', '털'),
+        ('다른 옷', '다른 한 마리'),
+        ('다른 옷은', '다른 한 마리는'),
+        ('녹색 근처', '잔디 위'),
+        ('초록색 근처', '잔디 위'),
+        ('녹색에서', '잔디에서'),
+        ('그림을 포함', '무늬가 있'),
+        ('두 개의 고양이', '고양이 두 마리'),
+        ('두 개의 동물', '동물 두 마리'),
+        ('두 개의 개', '강아지 두 마리'),
+        ('하나는', '한 마리는'),
+        ('과 같은 그림', ' 무늬'),
+        ('자연 환경의', ''),
+        ('한가운데', ''),
+        ('예를 들어', ''),
+        ('습도 노출', ''),
+        ('로 인해', ''),
+        ('융합', ''),
+        ('모시로 보이는', ''),
+        ('비가 흐르는', ''),
+        ('물의 융합', ''),
+        ('점과 같은', ''),
+        
+        # 추가 번역 오류 수정
+        ('무더운 땅 표면', '잔디'),
+        ('땅 표면', '땅'),
+        ('투입되어', '드리워져'),
+        ('그림자가 드리워져 있네요.', ''),
+        ('관심을 끌고있는', ''),
+        ('관심을 기울이고', ''),
+        ('무언가를 관찰하는', ''),
+        ('카메라 밖에서', ''),
+        ('더 자세한 설명이 필요하지 않습니다', ''),
+        ('서로 평온하지만', '평화롭게'),
+        ('것처럼 서로', ''),
+        
+        # 번역투 수정
+        ('나타나며', '보이고'),
+        ('던집니다', '드리우고'),
+        ('구성되어', '이루어져'),
+        ('착용하는', '쓴'),
+        ('가진', '있는'),
+        ('거대한', '큰'),
+        ('범위', ''),
+        ('요소', ''),
+        ('눈에 띄는', ''),
+        ('열려있는', '넓은'),
+        ('위치하고', ''),
+        ('앉아 있네요. 이', '앉아 있고'),
+        
+        # 불필요한 표현
+        ('의 왼쪽에는', ' 왼쪽에'),
+        ('의 오른쪽에는', ' 오른쪽에'),
+        ('주위에', '에'),
     ]
     for old, new in replacements:
         text = text.replace(old, new)
     
+    # 어색한 조사 수정
+    text = re.sub(r'를\s*\.', '를요.', text)
+    text = re.sub(r'을\s*\.', '을요.', text)
+    
     # 문장 정리
     text = text.strip()
-    text = re.sub(r'^[.,\s]+', '', text)
+    text = re.sub(r'^[.,:\s]+', '', text)
     text = re.sub(r'\s+', ' ', text)
     
     # 문장 끝 자연스럽게
     if text and not text[-1] in '.!?요':
-        if text[-1] in '다':
-            text = text[:-1] + '요.'
+        if text.endswith('다'):
+            text = text[:-1] + '네요.'
+        elif text.endswith('음') or text.endswith('임'):
+            text = text + '요.'
         else:
             text += '요.'
+    
+    # 마지막 정리 - 연속된 조사 정리
+    text = re.sub(r'\s+', ' ', text)
+    
+    # 세미콜론을 마침표로 변환
+    text = text.replace(';', '.')
+    
+    # 문장이 너무 길면 2문장만 유지
+    sentences = re.split(r'(?<=[.!?요])\s+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if len(sentences) > 2:
+        text = ' '.join(sentences[:2])
+    
+    # 문법 오류 수정
+    text = re.sub(r'마리은', '마리는', text)
+    text = re.sub(r'있해요', '있어요', text)
+    text = re.sub(r'없해요', '없어요', text)
+    text = re.sub(r'요\.', '요.', text)
     
     return text.strip()
 
@@ -289,7 +418,7 @@ def load_models():
         )
         print("✅ VL model loaded!")
         
-        # 2. 번역 모델 로드
+        # 2. 번역 모델 로드 (M2M100)
         print(f"📦 Loading translator: {TRANSLATOR_MODEL_ID}")
         from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
         
@@ -315,16 +444,15 @@ def translate_to_korean(text: str) -> str:
         return ""
     
     try:
-        # 소스 언어 설정 (영어)
+        # M2M100: 소스 언어 설정
         translator_tokenizer.src_lang = "en"
         
-        # 한 번에 번역 (문장 분리 X → 더 자연스러움)
         inputs = translator_tokenizer(
             text, 
             return_tensors="pt", 
             padding=True, 
             truncation=True, 
-            max_length=256
+            max_length=128
         )
         
         if device == "cuda":
@@ -334,8 +462,8 @@ def translate_to_korean(text: str) -> str:
             generated_tokens = translator.generate(
                 **inputs,
                 forced_bos_token_id=translator_tokenizer.get_lang_id("ko"),
-                max_length=256,
-                num_beams=3,  # 빔 서치로 품질 향상
+                max_length=128,
+                num_beams=3,
             )
         
         translated = translator_tokenizer.batch_decode(
@@ -348,7 +476,7 @@ def translate_to_korean(text: str) -> str:
         
     except Exception as e:
         print(f"Translation error: {e}")
-        return text  # 번역 실패 시 원문 반환
+        return text
 
 
 # =============================================
@@ -406,17 +534,47 @@ def process_image(image_data: str) -> Image.Image:
         raise ValueError(f"이미지 처리 실패: {e}")
 
 
-# 영어 시스템 프롬프트 (풍경 설명 최적화)
-SYSTEM_PROMPT = """You are describing a scenic landscape for a visually impaired person.
+# 영어 시스템 프롬프트 (극도로 짧게)
+SYSTEM_PROMPT = """Say what you see in ONE simple sentence. 10 words maximum.
+Example: "A cat and dog sitting on grass."
+Do NOT describe colors, positions, shadows, or background."""
 
-Describe in this order:
-1. Overall scene (mountain, ocean, forest, city, etc.)
-2. Sky and lighting (sunrise, sunset, cloudy, clear)
-3. Main elements from front to back
-4. Colors and atmosphere
-5. Any notable details
 
-Be vivid but natural. Around 2-3 sentences."""
+def clean_english_answer(text: str) -> str:
+    """영어 답변 정리 (번역 전)"""
+    if not text:
+        return ""
+    
+    # 괄호 안 내용 제거
+    text = re.sub(r'\([^)]*\)', '', text)
+    
+    # 불필요한 표현 제거
+    remove_phrases = [
+        r'which\s+.*?[,.]',
+        r'with\s+shadows?\s+.*?[,.]',
+        r'casting\s+.*?[,.]',
+        r'observing\s+.*?[,.]',
+        r'looking\s+at\s+.*?[,.]',
+        r'paying\s+attention\s+.*?[,.]',
+        r'outside\s+the\s+(frame|camera).*?[,.]',
+        r'off[\s-]camera.*?[,.]',
+        r'in\s+the\s+background.*?[,.]',
+        r'more\s+details?\s+.*',
+        r'no\s+further\s+.*',
+    ]
+    for pattern in remove_phrases:
+        text = re.sub(pattern, '.', text, flags=re.IGNORECASE)
+    
+    # 첫 문장만 추출
+    sentences = re.split(r'[.!?;]', text)
+    if sentences:
+        text = sentences[0].strip()
+    
+    # 마침표 추가
+    if text and not text.endswith('.'):
+        text += '.'
+    
+    return text.strip()
 
 
 def generate_english_answer(image: Image.Image, question: str) -> str:
@@ -456,11 +614,9 @@ def generate_english_answer(image: Image.Image, question: str) -> str:
     with torch.no_grad():
         generated_ids = vl_model.generate(
             **inputs,
-            max_new_tokens=80,  # 풍경 설명은 좀 더 길게
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            repetition_penalty=1.3,
+            max_new_tokens=30,  # 매우 짧게
+            do_sample=False,
+            repetition_penalty=1.5,
         )
     
     generated_ids_trimmed = [
@@ -488,7 +644,11 @@ def generate_answer(image: Image.Image, question: str, language: str = "ko") -> 
     
     # 영어로 답변 생성
     english_answer = generate_english_answer(image, en_question)
-    print(f"🇺🇸 영어 답변: {english_answer}")
+    print(f"🇺🇸 영어 원본: {english_answer}")
+    
+    # 영어 답변 정리 (번역 전)
+    english_answer = clean_english_answer(english_answer)
+    print(f"🇺🇸 영어 정리: {english_answer}")
     
     # 한국어로 번역
     if language == "ko":
@@ -511,6 +671,9 @@ async def generate_stream(image: Image.Image, question: str, language: str = "ko
     # 영어 답변 생성
     english_answer = generate_english_answer(image, en_question)
     
+    # 영어 답변 정리 (번역 전)
+    english_answer = clean_english_answer(english_answer)
+    
     # 한국어 번역
     if language == "ko":
         final_answer = translate_to_korean(english_answer)
@@ -532,11 +695,11 @@ async def root():
     """헬스 체크"""
     return {
         "status": "running",
-        "version": "2.0.0",
+        "version": "2.2.0",
         "vl_model": VL_MODEL_ID,
         "translator": TRANSLATOR_MODEL_ID,
         "cuda_available": torch.cuda.is_available(),
-        "features": ["질문 매핑 개선", "복합 질문 처리", "번역 후처리", "친근한 말투"]
+        "features": ["영어 답변 정리", "자연스러운 대화체", "빠른 응답"]
     }
 
 
